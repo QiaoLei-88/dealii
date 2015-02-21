@@ -5,7 +5,7 @@
 set mesh = slide.inp
 
 # Stabilization parameter
-set diffusion power = 2.0
+set diffusion power = 1.6
 
 # --------------------------------------------------
 # Boundary conditions
@@ -47,14 +47,17 @@ end
 # --------------------------------------------------
 # Time stepping control
 subsection time stepping
+  set rigid time step = true
+  set CFL number = 0.7
   set final time = 10.0 # simulation end time
-  set time step  = 0.02 # simulation time step
+  set time step  = 0.03 # simulation time step when rigid time step is ture
+                        # max simulation time step when rigid time step is false
   set theta scheme value = 0.5
 end
 
 subsection linear solver
   set output         = quiet
-  set method         = gmres
+  set method         = direct
   set ilut fill      = 1.5
   set ilut drop tolerance = 1e-6
   set ilut absolute tolerance = 1e-6

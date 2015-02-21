@@ -1084,8 +1084,11 @@ namespace Step33
       double diffusion_power;
 
       double time_step, final_time;
+      double CFL_number;
+      double readin_time_step;
       double theta;
       bool is_stationary;
+      bool is_rigid_time_step_size;
 
       std::string mesh_filename;
 
@@ -1126,6 +1129,13 @@ namespace Step33
 
       prm.enter_subsection("time stepping");
       {
+        prm.declare_entry("rigid time step", "false",
+                          Patterns::Bool(),
+                          "whether use specified time step or"
+                          "calulate according to CFL condition.");
+        prm.declare_entry("CFL number", "1.0",
+                          Patterns::Double(0),
+                          "CFL number");
         prm.declare_entry("time step", "0.1",
                           Patterns::Double(0),
                           "simulation time step");
@@ -1194,10 +1204,14 @@ namespace Step33
       prm.enter_subsection("time stepping");
       {
         time_step = prm.get_double("time step");
-        if (time_step == 0)
+        is_rigid_time_step_size = prm.get_bool("rigid time step");
+        CFL_number = prm.get_double("CFL number");
+        Assert(CFL_number > 0.0, ExcLowerRangeType<double> (CFL_number, 0.0));
+        readin_time_step = prm.get_double("time step");
+        if (readin_time_step == 0)
           {
             is_stationary = true;
-            time_step = 1.0;
+            readin_time_step = 1.0;
             final_time = 1.0;
           }
         else
@@ -1294,6 +1308,8 @@ namespace Step33
 
   private:
     void setup_system ();
+
+    void calc_next_time_step_size();
 
     void assemble_system ();
     void assemble_cell_term (const FEValues<dim>             &fe_v,
@@ -1406,6 +1422,60 @@ namespace Step33
     DoFTools::make_sparsity_pattern (dof_handler, sparsity_pattern);
 
     system_matrix.reinit (sparsity_pattern);
+  }
+
+
+
+  // @sect4{ConservationLaw::calc_next_time_step_size}
+  //
+  // Determian time step size of next time step. If rigid time step size is
+  // required, just use the time step size specified in the input file.
+  // Otherwise, calculate time step size according to CFL condition.
+  template <int dim>
+  void ConservationLaw<dim>::calc_next_time_step_size ()
+  {
+    if(parameters.is_rigid_time_step_size)
+    {
+      parameters.time_step = parameters.readin_time_step;
+    }
+    else
+    {
+      FEValues<dim> fe_v (mapping, fe, quadrature, update_values);
+      const unsigned int   n_q_points = fe_v.n_quadrature_points;
+      std::vector<Vector<double> > solution_values(n_q_points,
+                                                   Vector<double>(dim+2));
+      double min_time_step = parameters.readin_time_step;
+      typename DoFHandler<dim>::active_cell_iterator
+      cell = dof_handler.begin_active(),
+      endc = dof_handler.end();
+      for (; cell!=endc; ++cell)
+      {
+        fe_v.reinit (cell);
+        fe_v.get_function_values (current_solution, solution_values);
+        const double cell_size = fe_v.get_cell()->diameter();
+        double velocity;
+        for (unsigned int q=0; q<n_q_points; ++q)
+        {
+          const double density = solution_values[q](EulerEquations<dim>::density_component);
+          AssertThrow (density > 0.0, ExcMessage ("Negative density encountered!"));
+          const double pressure =
+            EulerEquations<dim>::template compute_pressure<double>(solution_values[q]);
+          AssertThrow (pressure > 0.0, ExcMessage ("Negative pressure encountered!"));
+
+          const double sound_speed = std::sqrt(EulerEquations<dim>::gas_gamma * pressure/density);
+          Tensor<1,dim> momentum;
+          for (unsigned int i=EulerEquations<dim>::first_momentum_component;
+                i < EulerEquations<dim>::first_momentum_component+dim; ++i)
+          {
+            momentum[i] = solution_values[q](i);
+          }
+          velocity = momentum.norm()/density;
+          min_time_step = std::min(min_time_step,
+                          cell_size / (velocity+sound_speed) * parameters.CFL_number);
+        }
+      }
+      parameters.time_step = min_time_step;
+    }
   }
 
 
@@ -2378,6 +2448,8 @@ namespace Step33
     current_solution = old_solution;
     predictor = old_solution;
 
+    calc_next_time_step_size();
+
     if (parameters.do_refine == true)
       for (unsigned int i=0; i<parameters.shock_levels; ++i)
         {
@@ -2417,8 +2489,8 @@ namespace Step33
                   << std::endl
                   << std::endl;
 
-        std::cout << "   NonLin Res     Lin Iter       Lin Res" << std::endl
-                  << "   _____________________________________" << std::endl;
+        std::cout << "   NonLin Res     Lin Iter       Lin Res       dT" << std::endl
+                  << "   ______________________________________________" << std::endl;
 
         // Then comes the inner Newton iteration to solve the nonlinear
         // problem in each time step. The way it works is to reset matrix and
@@ -2467,8 +2539,9 @@ namespace Step33
 
                 current_solution += newton_update;
 
-                std::printf("   %-16.3e %04d        %-5.2e\n",
-                            res_norm, convergence.first, convergence.second);
+                std::printf("   %-16.3e %04d        %-5.2e  %7.4g\n",
+                            res_norm, convergence.first,
+                            convergence.second, parameters.time_step);
               }
 
             ++nonlin_iter;
@@ -2515,6 +2588,7 @@ namespace Step33
 
             newton_update.reinit (dof_handler.n_dofs());
           }
+        calc_next_time_step_size();
       }
   }
 }
