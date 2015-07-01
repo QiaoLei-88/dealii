@@ -313,9 +313,10 @@ GridRefinement::adjust_refine_and_coarsen_number_fraction (const unsigned int  c
       // refinement here, though that may
       // result in a worse approximation
       adjusted_fractions.first  = 0;
-      coarsen_cells          = static_cast<int> (
-                                 (current_n_cells - max_n_cells) /
-                                 cell_decrease_on_coarsen);
+      coarsen_cells          =
+        (current_n_cells - max_n_cells)  *
+        GeometryInfo<dim>::max_children_per_cell /
+        (GeometryInfo<dim>::max_children_per_cell - 1);
       adjusted_fractions.second = std::min(coarsen_cells/current_n_cells, 1.0);
     }
   // otherwise, see if we would exceed the
@@ -334,7 +335,9 @@ GridRefinement::adjust_refine_and_coarsen_number_fraction (const unsigned int  c
   else if (static_cast<unsigned int>
            (current_n_cells
             + refine_cells * cell_increase_on_refine
-            - static_cast<int>(coarsen_cells / cell_decrease_on_coarsen))
+            - (coarsen_cells *
+               (GeometryInfo<dim>::max_children_per_cell - 1) /
+               GeometryInfo<dim>::max_children_per_cell))
            >
            max_n_cells)
     {
@@ -352,7 +355,9 @@ GridRefinement::adjust_refine_and_coarsen_number_fraction (const unsigned int  c
           (max_n_cells - current_n_cells)
           /
           (refine_cells * cell_increase_on_refine
-           - static_cast<int>(coarsen_cells / cell_decrease_on_coarsen));
+           - (coarsen_cells *
+              (GeometryInfo<dim>::max_children_per_cell - 1) /
+              GeometryInfo<dim>::max_children_per_cell));
 
       adjusted_fractions.first  = alpha * top_fraction;
       adjusted_fractions.second = alpha * bottom_fraction;
