@@ -315,7 +315,7 @@ GridRefinement::adjust_refine_and_coarsen_number_fraction (const unsigned int  c
       adjusted_fractions.first  = 0;
       coarsen_cells          = static_cast<int> (
                                  (current_n_cells - max_n_cells) /
-                                 static_ccell_decrease_on_coarsen);
+                                 cell_decrease_on_coarsen);
       adjusted_fractions.second = std::min(coarsen_cells/current_n_cells, 1.0);
     }
   // otherwise, see if we would exceed the
